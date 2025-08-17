@@ -1,0 +1,59 @@
+# Resolve react_native_pods.rb with node to allow for hoisting
+ENV['RCT_NEW_ARCH_ENABLED'] = '0'
+
+pre_install do |installer|
+  # workaround to force install folly/coro headers
+  folly_path = "node_modules/react-native/third-party-podspecs/folly.podspec"
+  if File.exist?(folly_path)
+    content = File.read(folly_path)
+    content.gsub!("source_files = \"folly/**/*.{h,cpp}\"", "source_files = \"folly/**/*.{h,cpp}\"")
+    File.write(folly_path, content)
+  end
+end
+
+require Pod::Executable.execute_command('node', ['-p',
+  'require.resolve(
+    "react-native/scripts/react_native_pods.rb",
+    {paths: [process.argv[1]]},
+  )', __dir__]).strip
+
+platform :ios, min_ios_version_supported
+prepare_react_native_project!
+
+linkage = ENV['USE_FRAMEWORKS']
+if linkage != nil
+  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
+  use_frameworks! :linkage => linkage.to_sym
+end
+
+target 'MyApp' do
+  config = use_native_modules!
+
+  use_react_native!(
+    :path => config[:reactNativePath],
+    # An absolute path to your application root.
+    :app_path => "#{Pod::Config.instance.installation_root}/..",
+    :fabric_enabled => false,      # New Architectureを無効化
+    :hermes_enabled => false        # Hermesは必要ならtrueでOK
+  )
+
+  post_install do |installer|
+    # https://github.com/facebook/react-native/blob/main/packages/react-native/scripts/react_native_pods.rb#L197-L202
+    react_native_post_install(
+      installer,
+      config[:reactNativePath],
+      :mac_catalyst_enabled => false,
+      # :ccache_enabled => true
+    )
+
+    installer.pods_project.targets.each do |target|
+
+      # folly 対策（ヘッダー）
+      target.build_configurations.each do |config|
+        config.build_settings['HEADER_SEARCH_PATHS'] ||= '$(inherited)'
+        config.build_settings['HEADER_SEARCH_PATHS'] << "$(PODS_ROOT)/Headers/Public/RCT-Folly"
+        config.build_settings['HEADER_SEARCH_PATHS'] << "$(PODS_ROOT)/RCT-Folly/folly"
+      end
+    end
+  end
+end

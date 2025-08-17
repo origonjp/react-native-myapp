@@ -1,0 +1,19 @@
+require_relative '../node_modules/react-native/scripts/react_native_pods'
+
+#platform :ios, '15.0'
+
+target 'MyApp' do
+  config = use_native_modules!
+
+  use_react_native!(
+    :path => config[:reactNativePath],
+    :hermes_enabled => false, # glog を使わない
+    :fabric_enabled => false  # folly, glog, RCT-Folly などを避ける
+  )
+
+
+  post_install do |installer|
+    react_native_post_install(installer)
+  end
+end
+
